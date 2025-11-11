@@ -1,4 +1,4 @@
-import os  # <-- Must be present!
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -15,20 +15,20 @@ logging.basicConfig(level=logging.INFO)
 # --- Flask App Initialization ---
 app = Flask(__name__)
 
-# ✅ Allow frontend hosted on Vercel to access backend API
+# ✅ Updated CORS for multiple Vercel frontends
 CORS(app, origins=[
-    "https://vercel-frontend.vercel.app",  # Replace with your actual frontend URL
-    "http://localhost:3000"  # For local development
+    "https://vercel-frontend-kappa-bice.vercel.app",
+    "https://vercel-frontend-git-main-raksha-ss-projects.vercel.app",
+    "https://vercel-frontend-i1wju7xod-raksha-ss-projects.vercel.app",
+    "http://localhost:3000"
 ], supports_credentials=True)
 
 # --- Database and Auth Configuration ---
 db_url = os.environ.get("DATABASE_URL")
 
-# Fix for Render Postgres URL format
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-# Fallback to SQLite for local use
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -49,7 +49,6 @@ API_URL_GEMINI = f"https://generativelanguage.googleapis.com/v1beta/models/gemin
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', 'local_openai_key')
 API_URL_OPENAI = "https://api.openai.com/v1/chat/completions"
 
-
 # --- Database Models ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -58,10 +57,6 @@ class User(db.Model):
     phone = db.Column(db.String(20), nullable=True)
     password_hash = db.Column(db.String(128), nullable=False)
     structures = db.relationship('Structure', backref='user', lazy=True, cascade="all, delete-orphan")
-
-    def __repr__(self):
-        return f'<User {self.email}>'
-
 
 class Structure(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -86,12 +81,10 @@ class Structure(db.Model):
             "model_used": self.model_used
         }
 
-
 class TokenBlacklist(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     jti = db.Column(db.String(36), nullable=False, unique=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-
 
 @jwt.token_in_blocklist_loader
 def check_if_token_in_blacklist(jwt_header, jwt_payload):
@@ -99,8 +92,7 @@ def check_if_token_in_blacklist(jwt_header, jwt_payload):
     token = TokenBlacklist.query.filter_by(jti=jti).first()
     return token is not None
 
-
-# --- Health Check Route ---
+# --- Health Check ---
 @app.route('/')
 def root_check():
     return jsonify({
@@ -109,8 +101,7 @@ def root_check():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }), 200
 
-
-# --- Generator Function (AI Integration) ---
+# --- AI Content Generation ---
 def generate_content_with_model(model_choice, company_name, category, num_pages, description, current_structure=None, refinement_prompt=None):
     json_schema = {
         "type": "ARRAY",
@@ -146,7 +137,7 @@ def generate_content_with_model(model_choice, company_name, category, num_pages,
         }
     }
 
-    if refinement_prompt and current_structure is not None:
+    if refinement_prompt and current_structure:
         current_structure_json = json.dumps(current_structure, indent=2)
         prompt = (
             f"Refine the provided JSON structure for '{company_name}' based on this request: '{refinement_prompt}'. "
@@ -160,10 +151,7 @@ def generate_content_with_model(model_choice, company_name, category, num_pages,
         )
 
     if model_choice == 'openai':
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {OPENAI_API_KEY}"
-        }
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_API_KEY}"}
         payload = {
             "model": "gpt-4o-mini",
             "messages": [
@@ -177,10 +165,7 @@ def generate_content_with_model(model_choice, company_name, category, num_pages,
         result = response.json()
         json_text = result['choices'][0]['message']['content']
     else:
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"responseMimeType": "application/json", "responseSchema": json_schema}
-        }
+        payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"responseMimeType": "application/json", "responseSchema": json_schema}}
         headers = {"Content-Type": "application/json"}
         response = requests.post(API_URL_GEMINI, headers=headers, data=json.dumps(payload))
         result = response.json()
@@ -188,42 +173,35 @@ def generate_content_with_model(model_choice, company_name, category, num_pages,
 
     return json_text
 
-
-# --- ROUTES (Auth + Structure Handling) ---
+# --- Auth Routes ---
 @app.route('/register', methods=['POST'])
 def register():
     try:
         data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-        name = data.get('name')
-        phone = data.get('phone')
+        email, password, name, phone = data.get('email'), data.get('password'), data.get('name'), data.get('phone')
         if not email or not password or not name:
             return jsonify({"error": "Name, email, and password are required"}), 400
 
-        existing_user = User.query.filter_by(email=email).first()
-        if existing_user:
+        if User.query.filter_by(email=email).first():
             return jsonify({"error": "Email already registered"}), 400
 
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
         new_user = User(name=name, email=email, phone=phone, password_hash=hashed_password)
         db.session.add(new_user)
         db.session.commit()
-
         return jsonify({"message": f"User {email} registered successfully"}), 201
     except Exception as e:
         app.logger.error(f"Error in /register: {e}", exc_info=True)
         return jsonify({"error": "Internal server error occurred during registration"}), 500
 
-
 @app.route('/login', methods=['POST'])
 def login():
     try:
         data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
+        email, password = data.get('email'), data.get('password')
         if not email or not password:
             return jsonify({"error": "Email and password required"}), 400
+
         user = User.query.filter_by(email=email).first()
         if user and bcrypt.check_password_hash(user.password_hash, password):
             access_token = create_access_token(identity=str(user.id))
@@ -232,7 +210,6 @@ def login():
     except Exception as e:
         app.logger.error(f"Error in /login: {e}", exc_info=True)
         return jsonify({"error": "Internal server error occurred during login"}), 500
-
 
 @app.route('/logout', methods=['POST'])
 @jwt_required()
@@ -246,7 +223,6 @@ def logout():
         app.logger.error(f"Error in /logout: {e}", exc_info=True)
         return jsonify({"error": "Internal server error occurred during logout"}), 500
 
-
 # --- Run Flask ---
 if __name__ == "__main__":
     with app.app_context():
@@ -258,4 +234,3 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
-
