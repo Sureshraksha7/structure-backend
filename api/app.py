@@ -7,7 +7,10 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, JWTManager, get_jwt
 from datetime import datetime, timezone, timedelta
-import re
+import logging
+
+# --- Logging Configuration ---
+logging.basicConfig(level=logging.INFO)
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
@@ -189,47 +192,70 @@ def generate_content_with_model(model_choice, company_name, category, num_pages,
 # --- ROUTES (Auth + Structure Handling) ---
 @app.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-    name = data.get('name')
-    phone = data.get('phone')
-    if not email or not password or not name:
-        return jsonify({"error": "Name, email, and password are required"}), 400
-    existing_user = User.query.filter_by(email=email).first()
-    if existing_user:
-        return jsonify({"error": "Email already registered"}), 400
-    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-    new_user = User(name=name, email=email, phone=phone, password_hash=hashed_password)
-    db.session.add(new_user)
-    db.session.commit()
-    return jsonify({"message": f"User {email} registered successfully"}), 201
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+        phone = data.get('phone')
+        if not email or not password or not name:
+            return jsonify({"error": "Name, email, and password are required"}), 400
+
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            return jsonify({"error": "Email already registered"}), 400
+
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        new_user = User(name=name, email=email, phone=phone, password_hash=hashed_password)
+        db.session.add(new_user)
+        db.session.commit()
+
+        return jsonify({"message": f"User {email} registered successfully"}), 201
+    except Exception as e:
+        app.logger.error(f"Error in /register: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error occurred during registration"}), 500
 
 
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-    if not email or not password:
-        return jsonify({"error": "Email and password required"}), 400
-    user = User.query.filter_by(email=email).first()
-    if user and bcrypt.check_password_hash(user.password_hash, password):
-        access_token = create_access_token(identity=str(user.id))
-        return jsonify(access_token=access_token), 200
-    return jsonify({"error": "Invalid credentials"}), 401
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        if not email or not password:
+            return jsonify({"error": "Email and password required"}), 400
+        user = User.query.filter_by(email=email).first()
+        if user and bcrypt.check_password_hash(user.password_hash, password):
+            access_token = create_access_token(identity=str(user.id))
+            return jsonify(access_token=access_token), 200
+        return jsonify({"error": "Invalid credentials"}), 401
+    except Exception as e:
+        app.logger.error(f"Error in /login: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error occurred during login"}), 500
 
 
 @app.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    jti = get_jwt()["jti"]
-    db.session.add(TokenBlacklist(jti=jti))
-    db.session.commit()
-    return jsonify({"message": "Logged out successfully"}), 200
+    try:
+        jti = get_jwt()["jti"]
+        db.session.add(TokenBlacklist(jti=jti))
+        db.session.commit()
+        return jsonify({"message": "Logged out successfully"}), 200
+    except Exception as e:
+        app.logger.error(f"Error in /logout: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error occurred during logout"}), 500
 
 
 # --- Run Flask ---
 if __name__ == "__main__":
+    with app.app_context():
+        try:
+            db.create_all()
+            app.logger.info("Database tables created successfully ✅")
+        except Exception as e:
+            app.logger.error(f"Error creating database tables: {e}", exc_info=True)
+
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
