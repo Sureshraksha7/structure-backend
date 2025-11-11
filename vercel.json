@@ -1,0 +1,36 @@
+{
+  "builds": [
+    {
+      "src": "backend/api/app.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb",
+        "runtime": "python3.9"
+      }
+    },
+    {
+      "src": "frontend/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    // 1. CRITICAL: Route ALL API traffic to the correct function path
+    {
+      "src": "/(login|register|logout|profile|change-password|generate|structures.*)",
+      "dest": "backend/api/app.py"
+    },
+    // 2. Route root (/) to index.html
+    {
+      "src": "/",
+      "dest": "frontend/index.html" 
+    },
+    // 3. Catch-all for all other static files (HTML, CSS, JS, etc.)
+    {
+      "src": "/(.*)",
+      "dest": "frontend/$1"
+    }
+  ],
+  "env": {
+    "PYTHON_VERSION": "3.9.7"
+  }
+}

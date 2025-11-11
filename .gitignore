@@ -1,0 +1,17 @@
+
+
+# Python artifacts
+__pycache__/
+*.pyc
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Dependencies (if installed inside the project root)
+# NOTE: Vercel uses requirements.txt, NOT node_modules or pipenv venv
+node_modules/
+
+# Files you explicitly do not want to upload
+*.zip
+*.rar

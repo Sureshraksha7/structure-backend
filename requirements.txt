@@ -1,0 +1,11 @@
+openai
+Flask
+Flask-CORS
+Flask-JWT-Extended
+Flask-Bcrypt
+SQLAlchemy
+requests
+Flask-SQLAlchemy
+python-dotenv
+psycopg2-binary # For PostgreSQL support (which is implied by your code)
+gunicorn # Vercel often uses Gunicorn or a similar WSGI server
