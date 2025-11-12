@@ -11,6 +11,7 @@ from flask_jwt_extended import (
 )
 from datetime import datetime, timezone, timedelta
 import logging
+from functools import wraps  # <-- added for decorator
 
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 # --- Flask App Initialization ---
 app = Flask(__name__)
 
-# ✅ Updated CORS for multiple Vercel frontends
+# ✅ CORS for multiple frontends
 CORS(
     app,
     origins=[
@@ -99,6 +100,15 @@ def check_if_token_in_blacklist(jwt_header, jwt_payload):
     jti = jwt_payload["jti"]
     token = TokenBlacklist.query.filter_by(jti=jti).first()
     return token is not None
+
+# --- JWT Preflight Decorator ---
+def jwt_optional_for_options(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        return fn(*args, **kwargs)
+    return wrapper
 
 # --- Health Check ---
 @app.route('/')
@@ -233,10 +243,9 @@ def logout():
 
 # --- Protected Endpoints with OPTIONS support ---
 @app.route('/profile', methods=['GET', 'OPTIONS'])
+@jwt_optional_for_options
 @jwt_required()
 def profile():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200  # Preflight response
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
     if not user:
@@ -249,10 +258,9 @@ def profile():
     }), 200
 
 @app.route('/structures', methods=['GET', 'OPTIONS'])
+@jwt_optional_for_options
 @jwt_required()
 def structures():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200  # Preflight response
     current_user_id = get_jwt_identity()
     structures = Structure.query.filter_by(user_id=current_user_id).all()
     return jsonify([s.to_dict() for s in structures]), 200
