@@ -5,7 +5,10 @@ import requests
 import json
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, JWTManager, get_jwt
+from flask_jwt_extended import (
+    create_access_token, jwt_required, get_jwt_identity,
+    JWTManager, get_jwt
+)
 from datetime import datetime, timezone, timedelta
 import logging
 
@@ -16,16 +19,21 @@ logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 
 # ✅ Updated CORS for multiple Vercel frontends
-CORS(app, origins=[
-    "https://vercel-frontend-kappa-bice.vercel.app",
-    "https://vercel-frontend-git-main-raksha-ss-projects.vercel.app",
-    "https://vercel-frontend-i1wju7xod-raksha-ss-projects.vercel.app",
-    "http://localhost:3000"
-], supports_credentials=True)
+CORS(
+    app,
+    origins=[
+        "https://vercel-frontend-kappa-bice.vercel.app",
+        "https://vercel-frontend-git-main-raksha-ss-projects.vercel.app",
+        "https://vercel-frontend-i1wju7xod-raksha-ss-projects.vercel.app",
+        "http://localhost:3000"
+    ],
+    supports_credentials=True,
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"]
+)
 
 # --- Database and Auth Configuration ---
 db_url = os.environ.get("DATABASE_URL")
-
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
@@ -222,6 +230,32 @@ def logout():
     except Exception as e:
         app.logger.error(f"Error in /logout: {e}", exc_info=True)
         return jsonify({"error": "Internal server error occurred during logout"}), 500
+
+# --- Protected Endpoints with OPTIONS support ---
+@app.route('/profile', methods=['GET', 'OPTIONS'])
+@jwt_required()
+def profile():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200  # Preflight response
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "phone": user.phone
+    }), 200
+
+@app.route('/structures', methods=['GET', 'OPTIONS'])
+@jwt_required()
+def structures():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200  # Preflight response
+    current_user_id = get_jwt_identity()
+    structures = Structure.query.filter_by(user_id=current_user_id).all()
+    return jsonify([s.to_dict() for s in structures]), 200
 
 # --- Run Flask ---
 if __name__ == "__main__":
